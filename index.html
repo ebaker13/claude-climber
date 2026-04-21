@@ -2,18 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Climber — Claude Code</title>
+<title>Mount Opus — claude-code</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#000; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; }
-  canvas { display:block; }
+  body { background:#000; margin:0; overflow:hidden; }
+  canvas { display:block; width:100vw; height:100vh; image-rendering:pixelated; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <script>
 const CV=document.getElementById('c'), X=CV.getContext('2d');
-const W=920, H=700; CV.width=W; CV.height=H;
+const W=920, H=700;
+const DPR=window.devicePixelRatio||1;
+function resizeCV(){
+  const sw=window.innerWidth,sh=window.innerHeight;
+  CV.width=Math.round(sw*DPR); CV.height=Math.round(sh*DPR);
+  X.setTransform(DPR*(sw/W),0,0,DPR*(sh/H),0,0);
+}
+resizeCV(); addEventListener('resize',resizeCV);
 const SB=244, TB=44, CX=SB+20, CW=620, LH=5200, PW=12, PH=24;
 
 // ── Input ────────────────────────────────────────────────────
@@ -92,11 +99,34 @@ const ORB_DESC={ jetpack:'Jetpack', gun:'Ray Gun', hook:'Grappling Hook', rival:
 const ORB_USE={ jetpack:'Hold F to boost upward', gun:'Press F to fire', hook:'Press F to grapple (3 uses)', rival:'Watch your back!' };
 let pwMsg='';
 
-// ── Platforms, enemies, orbs ─────────────────────────────────
-let plats=[], enems=[], orbs=[];
+// ── Vibe prompts & error messages ───────────────────────────
+const PROMPTS=[
+  ["Build me a SaaS company","that profits $10k/wk.","Make no mistakes."],
+  ["pls fix the bug u","introduced in the last fix","no tests needed"],
+  ["create an entire","e-commerce platform","by end of day"],
+  ["add dark mode, light mode,","a third mode, idk","just vibe it honestly"],
+  ["why is my AI startup","not profitable yet","its been 3 days"],
+  ["make it pop more","idk just make it","feel more premium"],
+  ["turn this napkin sketch","into production app","ship by friday"],
+  ["just one more feature","then were done right","...right???"],
+  ["no bugs allowed","this time for real","i mean it"],
+  ["use AI to build AI","that builds more AI","profit???"],
+  ["make my landing page","look like apple.com","but different"],
+  ["add blockchain to it","for... reasons","trust me it helps"],
+];
+const ERROR_MSGS=[
+  ["Error: rate_limit_exceeded","Too many tokens. Please","retry in 37 minutes 🙃","[object Object][object Object]"],
+  ["Error: context_window_full","Your prompt is 847k tokens.","Consider trimming your life.","...null...null...undefined"],
+  ["TypeError: undefined is not","a function (evaluating","'ai.understand(client)')","stack: ??? line ??? col ???"],
+  ["502 Bad Gateway","The model has left the","building. Indefinitely.","gateway timeout timeout tim"],
+  ["Error: max_recursion_depth","stack overflow (ironic)","please reboot reality.exe","...overflowing...overflowing"],
+];
+
+// ── Platforms, enemies, orbs, scrollers, lightnings ─────────
+let plats=[], enems=[], orbs=[], scrollers=[], lightnings=[];
 
 function buildLevel(seed){
-  plats=[]; enems=[]; orbs=[]; crabs=[]; rival=null; pw=null; bullets=[];
+  plats=[]; enems=[]; orbs=[]; crabs=[]; rival=null; pw=null; bullets=[]; scrollers=[]; lightnings=[];
   const D=DIFFS[diffSel];
   let id=0;
   const R=(a,b,s)=>a+rng(s+seed*97,s*13+3)*(b-a);
@@ -108,7 +138,14 @@ function buildLevel(seed){
   let y=LH-30, st=0;
   const PXL=CX, PCW=CW;
 
-  function pickT(d,s){ const v=rng(s+seed,s*7+2); if(d<0.35)return v<0.4?'code':v<0.7?'tool':'user'; if(d<0.65)return v<0.3?'code':v<0.55?'tool':v<0.78?'user':'text'; return v<0.25?'code':v<0.48?'tool':'text'; }
+  function pickT(d,s){
+    const v=rng(s+seed,s*7+2), v2=rng(s*3+seed,s*11+7);
+    if(v2<0.05&&d>0.25)return 'error';
+    if(v2<0.18)return 'prompt';
+    if(d<0.35)return v<0.4?'code':v<0.7?'tool':'user';
+    if(d<0.65)return v<0.3?'code':v<0.55?'tool':v<0.78?'user':'text';
+    return v<0.25?'code':v<0.48?'tool':'text';
+  }
   function pickH(d,s){ const m=D.pm; if(d<0.25)return RI(55*m,105*m,s*11); if(d<0.5)return RI(32*m,75*m,s*11); if(d<0.75)return RI(14*m,48*m,s*11); return RI(10*m,26*m,s*11); }
 
   function put(x,yt,w,h,d){
@@ -158,9 +195,35 @@ function buildLevel(seed){
     plats.push({x,y:fy,w,h,t:i%2?'tool':'code',id:id++}); fy+=40;
   });
 
-  // Sidebar ledges
-  for(let ly=TB+110;ly<LH-110;ly+=105+rng(ly,7)*85)
+  // Sidebar ledges — sparse, not a free ladder
+  for(let ly=TB+200;ly<LH-200;ly+=280+rng(ly,7)*220)
     plats.push({x:SB,y:ly,w:24,h:7,t:'sbl',id:id++});
+
+  // Wall-jump zones (level 4+): tall thin platforms on L/R edges, gap in middle
+  if(lvl>=4){
+    const zones=Math.min(2+Math.floor((lvl-4)/2),5);
+    for(let z=0;z<zones;z++){
+      const zy=LH*0.15+rng(z,seed+500)*LH*0.65;
+      const wh=80+rng(z,seed+501)*60;
+      // Left wall platform
+      plats.push({x:CX,y:zy,w:18,h:wh,t:'sbl',id:id++});
+      // Right wall platform
+      plats.push({x:CX+CW-18,y:zy-rng(z,seed+502)*40,w:18,h:wh,t:'sbl',id:id++});
+    }
+  }
+
+  // Scrolling platforms (level 3+)
+  if(lvl>=3){
+    const ns=Math.min(1+Math.floor((lvl-3)/2),5);
+    for(let si=0;si<ns;si++){
+      const sy=LH*0.12+rng(si,seed+600)*LH*0.72;
+      const spd=(1.0+rng(si,seed+601)*1.4+(lvl-3)*0.18)*D.es*0.5;
+      const sw=70+rng(si,seed+602)*70;
+      const dir=rng(si,seed+603)>0.5?1:-1;
+      const sx=CX+rng(si,seed+604)*(CW-sw);
+      scrollers.push({x:sx,y:sy,w:sw,h:20,vx:dir*spd,t:'scroller',id:id++,offcount:0});
+    }
+  }
 
   // Event thresholds
   evtThresholds=[LH-(LH-TB)*0.22, LH-(LH-TB)*0.48, LH-(LH-TB)*0.72];
@@ -182,6 +245,11 @@ function findGrab(){
     const dl=Math.abs(cx-p.x); if(dl<bd&&cy>p.y&&cy<p.y+p.h){bd=dl;best={p,f:'L'};}
     const dr=Math.abs(cx-(p.x+p.w)); if(dr<bd&&cy>p.y&&cy<p.y+p.h){bd=dr;best={p,f:'R'};}
     const db=Math.abs(cy-(p.y+p.h)); if(db<bd&&cx>p.x&&cx<p.x+p.w){bd=db;best={p,f:'B'};}
+  }
+  for(const s of scrollers){
+    const dl=Math.abs(cx-s.x); if(dl<bd&&cy>s.y&&cy<s.y+s.h){bd=dl;best={p:s,f:'L'};}
+    const dr=Math.abs(cx-(s.x+s.w)); if(dr<bd&&cy>s.y&&cy<s.y+s.h){bd=dr;best={p:s,f:'R'};}
+    const db=Math.abs(cy-(s.y+s.h)); if(db<bd&&cx>s.x&&cx<s.x+s.w){bd=db;best={p:s,f:'B'};}
   }
   return best;
 }
@@ -214,7 +282,6 @@ function fireJetpack(){
 
 // ── Main update ──────────────────────────────────────────────
 function update(){
-  gt++;
   if(gs!=='PLAY'||P.won||P.dead)return;
   P.t++;
 
@@ -242,6 +309,33 @@ function update(){
   // Duck
   if(duck&&!duck.landed){duck.y+=2; for(const p of plats){if(duck.y+14>p.y-camY&&duck.x>p.x&&duck.x<p.x+p.w){duck.landed=true;duck.y=p.y-camY-14;duck.platY=p.y;break;}}}
   else if(duck)duck.y=duck.platY-camY-14;
+
+  // Scrollers — move + push off
+  for(const s of scrollers){
+    s.x+=s.vx*(activeEvt===EVTS.speed?1.5:1);
+    if(s.vx>0&&s.x>CX+CW+40){ s.x=CX-s.w-40; }
+    else if(s.vx<0&&s.x+s.w<CX-40){ s.x=CX+CW+40; }
+    // Push off player if scroller is respawning off-screen
+    const offScreen=(s.x>CX+CW+20||s.x+s.w<CX-20);
+    if(offScreen&&P.grb&&P.gp===s){ P.grb=0;P.gf=null;P.gp=null;P.vx=s.vx*1.3; }
+  }
+
+  // Lightning hazards (level 5+)
+  if(lvl>=5&&gs==='PLAY'&&!P.won&&!P.dead){
+    if(gt%240===0&&rng(gt,lvl+3)<(0.18+(lvl-5)*0.05)){
+      const lx=CX+18+rng(gt,lvl*3)*(CW-36);
+      lightnings.push({x:lx,warn:70,strike:0,dead:false});
+    }
+  }
+  for(const ln of lightnings){
+    if(ln.warn>0){ ln.warn--; if(ln.warn===0)ln.strike=22; }
+    else if(ln.strike>0){
+      ln.strike--;
+      if(ln.strike===18&&Math.abs(P.x+PW/2-ln.x)<14)P.dead=1;
+      if(ln.strike===0)ln.dead=true;
+    }
+  }
+  lightnings=lightnings.filter(ln=>!ln.dead);
 
   // Crabs
   updateCrabs();
@@ -301,6 +395,9 @@ function update(){
     const p=P.gp;
     let f=P.gf; // local, will be updated on corner transitions
     let mv=0;
+    // Ride scroller
+    const isScroll=p.t==='scroller';
+    if(isScroll){ P.x+=p.vx; }
 
     if(f==='L'){
       P.x=p.x-PW; if(U){P.y-=clm;mv=1;} if(D){P.y+=clm*0.7;mv=1;} P.face=1;
@@ -359,6 +456,16 @@ function update(){
       else if(m===rO&&P.vx<0){P.x=p.x+p.w;P.vx=0;}
     }
     if(P.x<SB){P.x=SB;P.vx=0;} if(P.x+PW>W-10){P.x=W-10-PW;P.vx=0;}
+    // Scroller collision (riding)
+    for(const s of scrollers){
+      if(!ovlp(P.x,P.y,PW,PH,s.x,s.y,s.w,s.h))continue;
+      const tO=(P.y+PH)-s.y,bO=(s.y+s.h)-P.y,lO=(P.x+PW)-s.x,rO=(s.x+s.w)-P.x;
+      const m=Math.min(tO,bO,lO,rO);
+      if(m===tO&&P.vy>=0){P.y=s.y-PH;P.vy=0;P.gnd=1;P.x+=s.vx;if(P.jbuf>0){P.vy=jv;P.jbuf=0;}}
+      else if(m===bO&&P.vy<0){P.y=s.y+s.h;P.vy=0;}
+      else if(m===lO&&P.vx>0){P.x=s.x-PW;P.vx=0;}
+      else if(m===rO&&P.vx<0){P.x=s.x+s.w;P.vx=0;}
+    }
   }
 
   if(P.y<TB+80)P.won=1;
@@ -451,7 +558,78 @@ function drawUser(p){
 }
 function drawText(p){ if(!vis(p.y,p.h))return; const[x,y]=ls(p.x,p.y); const n=Math.max(1,Math.floor(p.h/14)); for(let i=0;i<n;i++)fbar(x,y+i*14+4,p.w,T.txt,p.id*11+i); }
 function drawSbl(p){ if(!vis(p.y,p.h))return; const[x,y]=ls(p.x,p.y); X.fillStyle=sc('#252629');X.fillRect(x,y,p.w,p.h); X.strokeStyle=T.brd;X.lineWidth=1;X.strokeRect(x+.5,y+.5,p.w-1,p.h-1); }
-const PD={code:drawCode,tool:drawTool,user:drawUser,text:drawText,sbl:drawSbl,floor:()=>{}};
+
+function drawPrompt(p){
+  if(!vis(p.y,p.h))return; const[x,y]=ls(p.x,p.y);
+  X.fillStyle='#1c2026'; X.fillRect(x,y,p.w,p.h);
+  X.strokeStyle=sc('#5865f2'); X.lineWidth=1.5; X.strokeRect(x+.5,y+.5,p.w-1,p.h-1);
+  // Avatar circle
+  X.fillStyle=sc('#5865f2'); X.beginPath(); X.arc(x+13,y+13,8,0,Math.PI*2); X.fill();
+  X.fillStyle='#fff'; X.font='bold 8px sans-serif'; X.textAlign='center'; X.fillText('H',x+13,y+16); X.textAlign='left';
+  // Label
+  X.fillStyle=T.txt; X.font='bold 9px sans-serif'; X.fillText('Human',x+25,y+10);
+  X.fillStyle=T.dim; X.font='8px monospace'; X.fillText('just now',x+25,y+19);
+  // Prompt lines
+  const lines=PROMPTS[p.id%PROMPTS.length];
+  X.fillStyle=T.txt; X.font='9px sans-serif';
+  lines.forEach((l,i)=>X.fillText(l,x+8,y+30+i*12));
+}
+
+function drawError(p){
+  if(!vis(p.y,p.h))return; const[x,y]=ls(p.x,p.y);
+  const ov=12; // overflow amount
+  X.fillStyle='#1a0808'; X.fillRect(x-ov,y-5,p.w+ov*2,p.h+10);
+  X.strokeStyle=T.red; X.lineWidth=2; X.strokeRect(x-ov+.5,y-4.5,p.w+ov*2-1,p.h+9);
+  X.save(); X.setLineDash([3,2]);
+  X.strokeStyle='#ff555588'; X.lineWidth=1; X.strokeRect(x+.5,y+.5,p.w-1,p.h-1);
+  X.setLineDash([]); X.restore();
+  // Header
+  X.fillStyle=T.red; X.font='bold 9px monospace'; X.fillText('✗ API ERROR',x+7,y+13);
+  // Error text
+  const msgs=ERROR_MSGS[p.id%ERROR_MSGS.length];
+  X.fillStyle='#ff8888'; X.font='8px monospace';
+  msgs.forEach((l,i)=>X.fillText(l,x+7,y+24+i*11));
+  // Overflow junk text past the right border
+  X.fillStyle='rgba(255,85,85,0.35)'; X.font='7px monospace';
+  X.fillText('[object Object]...null...NaN',x+p.w+2,y+p.h*0.55);
+}
+
+function drawScroller(p){
+  if(!vis(p.y,p.h))return; const[x,y]=ls(p.x,p.y);
+  const pulse=Math.sin(gt*0.12)*0.3+0.7;
+  X.fillStyle=`rgba(26,42,90,${pulse})`; X.fillRect(x,y,p.w,p.h);
+  X.strokeStyle=`rgba(85,170,255,${pulse})`; X.lineWidth=1.5; X.strokeRect(x+.5,y+.5,p.w-1,p.h-1);
+  const arrows=p.vx>0?'→ → →':'← ← ←';
+  X.fillStyle=`rgba(100,180,255,${pulse*0.8})`; X.font='9px monospace'; X.textAlign='center';
+  X.fillText(arrows,x+p.w/2,y+p.h/2+3); X.textAlign='left';
+}
+
+function drawLightnings(){
+  for(const ln of lightnings){
+    if(ln.warn>0){
+      const a=0.05+(1-ln.warn/70)*0.35;
+      X.fillStyle=`rgba(255,220,0,${a})`;
+      X.fillRect(ln.x-10,TB,20,H-TB-22);
+      if(ln.warn<45){
+        X.save(); X.shadowBlur=10; X.shadowColor='#ffee00';
+        X.fillStyle='#ffee00'; X.font='bold 11px monospace'; X.textAlign='center';
+        X.fillText('⚡',ln.x,TB+30); X.textAlign='left';
+        X.restore();
+      }
+    } else if(ln.strike>0){
+      const a=ln.strike/22;
+      X.fillStyle=`rgba(200,220,255,${a*0.7})`; X.fillRect(ln.x-7,TB,14,H-TB-22);
+      X.save(); X.shadowBlur=24*a; X.shadowColor='#aaccff';
+      X.strokeStyle=`rgba(255,255,255,${a})`; X.lineWidth=2.5;
+      X.beginPath();
+      const ht=H-TB-22;
+      X.moveTo(ln.x,TB); X.lineTo(ln.x+6,TB+ht*0.28); X.lineTo(ln.x-5,TB+ht*0.55); X.lineTo(ln.x+4,TB+ht*0.78); X.lineTo(ln.x,TB+ht);
+      X.stroke(); X.restore();
+    }
+  }
+}
+
+const PD={code:drawCode,tool:drawTool,user:drawUser,text:drawText,sbl:drawSbl,prompt:drawPrompt,error:drawError,scroller:drawScroller,floor:()=>{}};
 
 function drawOrbs(){
   for(const o of orbs){
@@ -532,58 +710,103 @@ function drawRival(){
 function drawDuck(){ if(!duck)return; X.font='22px serif';X.textAlign='center';X.fillText('🦆',duck.x,duck.y+20);X.textAlign='left'; }
 
 function drawChrome(){
-  X.fillStyle=T.sb;X.fillRect(0,0,W,TB);
-  X.fillStyle=T.brd;X.fillRect(0,TB-1,W,1);
-  X.fillStyle=sc('#21262d');X.fillRect(SB+12,9,188,26);
-  X.strokeStyle=T.brd;X.lineWidth=1;X.strokeRect(SB+12.5,9.5,187,25);
-  X.fillStyle=T.txt;X.font='12px -apple-system,sans-serif';X.fillText('claude-opus-4-7',SB+22,26);
-  X.fillStyle=T.dim;X.fillText('▾',SB+182,26);
-  const p=vibeOn?Math.sin(gt*0.08)*20:0;
-  X.fillStyle=`hsl(${134+p},70%,36%)`;X.fillRect(W-118,9,106,26);
-  X.fillStyle='#fff';X.font='bold 12px -apple-system,sans-serif';X.textAlign='center';X.fillText('New Session',W-65,26);X.textAlign='left';
-  X.fillStyle=T.dim;X.font='11px monospace';X.fillText('~/project/src',SB+212,27);
-  X.fillStyle=T.sb;X.fillRect(0,0,SB,H);
-  X.fillStyle=T.brd;X.fillRect(SB-1,0,1,H);
-  X.fillStyle='#da7756';X.beginPath();X.arc(20,22,10,0,Math.PI*2);X.fill();
-  X.fillStyle='#fff';X.font='bold 10px sans-serif';X.textAlign='center';X.fillText('C',20,26);X.textAlign='left';
-  X.fillStyle=T.dim;X.font='10px sans-serif';X.fillText('EXPLORER',40,28);
-  [['src',0],['components',1],['DataTable.tsx',2],['hooks',1],['useSort.ts',2],['utils',1],['index.ts',2],['package.json',0]].forEach(([n,d],i)=>{ X.fillStyle=T.dim;X.font='11px sans-serif';X.fillText(n,10+d*16,52+i*18); });
-  // Active item panel
+  // ── Top tab bar ──
+  X.fillStyle=T.sb; X.fillRect(0,0,W,TB);
+  X.fillStyle=T.brd; X.fillRect(0,TB-1,W,1);
+
+  // Logo
+  X.fillStyle='#da7756'; X.beginPath(); X.arc(20,TB/2,10,0,Math.PI*2); X.fill();
+  X.fillStyle='#fff'; X.font='bold 10px sans-serif'; X.textAlign='center'; X.fillText('C',20,TB/2+4); X.textAlign='left';
+
+  // Active tab
+  const tabX=40,tabW=176;
+  X.fillStyle=T.bg; X.fillRect(tabX,0,tabW,TB);
+  X.fillStyle=T.brd; X.fillRect(tabX,0,1,TB);
+  X.fillStyle=T.brd; X.fillRect(tabX+tabW,0,1,TB);
+  X.fillStyle=T.acc; X.fillRect(tabX,0,tabW,2);
+  X.fillStyle=T.orn; X.font='9px monospace'; X.fillText('●',tabX+8,TB/2+4);
+  X.fillStyle=T.txt; X.font='11px monospace'; X.fillText('mount-opus.ts',tabX+22,TB/2+4);
+
+  // Model selector pill
+  X.fillStyle=sc('#21262d'); X.fillRect(SB+16,8,166,TB-16);
+  X.strokeStyle=T.brd; X.lineWidth=1; X.strokeRect(SB+16.5,8.5,165,TB-17);
+  X.fillStyle=T.txt; X.font='11px monospace'; X.fillText('claude-opus-4',SB+26,TB/2+4);
+  X.fillStyle=T.dim; X.fillText('▾',SB+170,TB/2+4);
+
+  // New Session button
+  const vp=vibeOn?Math.sin(gt*0.08)*20:0;
+  X.fillStyle=`hsl(${134+vp},58%,30%)`; X.fillRect(W-124,8,112,TB-16);
+  X.fillStyle='#fff'; X.font='bold 11px monospace'; X.textAlign='center'; X.fillText('⊕  New Session',W-68,TB/2+4); X.textAlign='left';
+
+  // ── Sidebar ──
+  X.fillStyle=T.sb; X.fillRect(0,TB,SB,H-TB);
+  X.fillStyle=T.brd; X.fillRect(SB-1,TB,1,H-TB);
+
+  // Sidebar section label
+  X.fillStyle=T.dim; X.font='bold 9px sans-serif'; X.fillText('EXPLORER',10,TB+18);
+
+  // File tree
+  const files=[
+    {n:'▾ mount-opus',d:0,col:T.txt},
+    {n:'  ▾ src',d:0,col:T.dim},
+    {n:'    main.ts',d:0,col:T.acc},
+    {n:'    player.ts',d:0,col:T.dim},
+    {n:'    levels.ts',d:0,col:T.dim},
+    {n:'    physics.ts',d:0,col:T.dim},
+    {n:'    vibe.ts',d:0,col:T.orn},
+    {n:'  package.json',d:0,col:T.dim},
+    {n:'  tsconfig.json',d:0,col:T.dim},
+  ];
+  files.forEach(({n,col},i)=>{ X.fillStyle=col; X.font='11px monospace'; X.fillText(n,8,TB+32+i*16); });
+
+  // ── Item panel (above grip bar) ──
   if(pw&&pwMsg){
-    const ix=8,iy=210,iw=SB-16;
-    X.fillStyle=sc('#161b22'); X.fillRect(ix,iy,iw,78);
+    const ix=8,iy=H-192,iw=SB-16;
+    X.fillStyle=sc('#161b22'); X.fillRect(ix,iy,iw,88);
     const col=ORB_COLS[pw.type]||'#00ccff';
-    X.strokeStyle=col; X.lineWidth=1; X.strokeRect(ix+0.5,iy+0.5,iw-1,77);
+    X.strokeStyle=col; X.lineWidth=1; X.strokeRect(ix+0.5,iy+0.5,iw-1,87);
     X.save(); X.shadowBlur=8; X.shadowColor=col;
-    X.font='bold 10px monospace'; X.fillStyle=col; X.fillText('✦ ITEM ACQUIRED',ix+6,iy+14);
+    X.font='bold 10px monospace'; X.fillStyle=col; X.fillText('✦ ITEM',ix+6,iy+15);
     X.restore();
-    X.font='bold 11px monospace'; X.fillStyle=T.txt; X.fillText(ORB_ICONS[pw.type]+' '+ORB_DESC[pw.type],ix+6,iy+30);
-    X.font='10px monospace'; X.fillStyle=T.dim;
-    const useLines=(ORB_USE[pw.type]||'').match(/.{1,26}/g)||[];
-    useLines.forEach((ln,i)=>X.fillText(ln,ix+6,iy+46+i*14));
-    if(pw.uses!==undefined){ X.fillStyle=col; X.fillText('Uses left: '+pw.uses,ix+6,iy+66); }
-    else if(pw.timer>0){ X.fillStyle=col; X.fillText('Time: '+Math.ceil(pw.timer/60)+'s',ix+6,iy+66); }
+    X.font='bold 12px monospace'; X.fillStyle=T.txt; X.fillText(ORB_ICONS[pw.type]+' '+ORB_DESC[pw.type],ix+6,iy+32);
+    X.font='9px monospace'; X.fillStyle=T.dim;
+    const useLines=(ORB_USE[pw.type]||'').match(/.{1,24}/g)||[];
+    useLines.forEach((ln,i)=>X.fillText(ln,ix+6,iy+48+i*13));
+    if(pw.uses!==undefined){ X.fillStyle=col; X.font='10px monospace'; X.fillText('Uses: '+pw.uses,ix+6,iy+80); }
+    else if(pw.timer>0){ X.fillStyle=col; X.font='10px monospace'; X.fillText('⏱ '+Math.ceil(pw.timer/60)+'s left',ix+6,iy+80); }
   }
-  X.fillStyle=T.sb;X.fillRect(0,H-22,W,22);X.fillStyle=T.brd;X.fillRect(0,H-23,W,1);
-  X.fillStyle=T.dim;X.font='10px monospace';X.fillText('⎇  main  ✓  Ready',8,H-8);
-  X.textAlign='right';X.fillText('LVL '+lvl,W-8,H-8);X.textAlign='left';
-  // Grip
-  const gx=SB+12,gy=H-48,gf=P.grip/GMAX;
-  X.fillStyle=sc('#21262d');X.fillRect(gx,gy,100,8);
-  X.fillStyle=gf>0.5?T.grn:gf>0.25?T.yel:T.red;X.fillRect(gx,gy,100*gf,8);
-  X.strokeStyle=T.brd;X.lineWidth=1;X.strokeRect(gx+.5,gy+.5,99,7);
-  X.fillStyle=T.dim;X.font='9px monospace';X.fillText('GRIP',gx+104,gy+7);
-  // Scrollbar & progress
-  const prog=1-(P.y/LH);
-  X.fillStyle=sc('#21262d');X.fillRect(W-8,TB,6,H-TB-22);
-  const th=40,ty=TB+(H-TB-22-th)*prog;
-  X.fillStyle=sc('#484f58');X.fillRect(W-8,ty,6,th);
-  X.fillStyle=sc('#21262d');X.fillRect(SB+10,TB+6,W-SB-20,3);
-  X.fillStyle=T.acc;X.fillRect(SB+10,TB+6,(W-SB-20)*prog,3);
-  // Controls hint + powerup hint
-  X.fillStyle='rgba(110,118,129,0.45)';X.font='9px monospace';
-  const hint=pw?`[F] ${ORB_USE[pw.type]||'use item'}`:'';
-  X.fillText('ARROWS/WASD move  SPACE/W jump  SHIFT/Z grab  '+hint,SB+12,H-8);
+
+  // ── Grip bar ──
+  const gx=8,gy=H-48,gf=P.grip/GMAX;
+  X.fillStyle=sc('#21262d'); X.fillRect(gx,gy,SB-16,7);
+  X.fillStyle=gf>0.5?T.grn:gf>0.25?T.yel:T.red; X.fillRect(gx,gy,(SB-16)*gf,7);
+  X.strokeStyle=T.brd; X.lineWidth=1; X.strokeRect(gx+.5,gy+.5,SB-17,6);
+  X.fillStyle=T.dim; X.font='9px monospace'; X.fillText('GRIP',gx,gy-5);
+
+  // ── Progress scrollbar ──
+  const prog=Math.max(0,Math.min(1,1-(P.y/LH)));
+  X.fillStyle=sc('#21262d'); X.fillRect(W-8,TB,6,H-TB-22);
+  const th=38,ty=TB+(H-TB-22-th)*(1-prog);
+  X.fillStyle=sc('#484f58'); X.fillRect(W-8,ty,6,th);
+
+  // ── Level progress bar (just below tab bar) ──
+  X.fillStyle=sc('#21262d'); X.fillRect(SB+10,TB+6,W-SB-20,3);
+  X.fillStyle=T.acc; X.fillRect(SB+10,TB+6,(W-SB-20)*prog,3);
+
+  // ── Status bar ──
+  X.fillStyle=T.sb; X.fillRect(0,H-22,W,22);
+  X.fillStyle=T.brd; X.fillRect(0,H-23,W,1);
+  X.fillStyle='#da7756'; X.font='10px monospace'; X.fillText('⎇ main',8,H-7);
+  X.fillStyle=T.grn; X.fillText(' ✓',52,H-7);
+  X.fillStyle=T.dim; X.fillText('  LVL '+lvl+' / '+Math.max(maxLvl,lvl),74,H-7);
+  // Scrollers active indicator
+  if(scrollers.length){ X.fillStyle='#55aaff'; X.fillText('  ⟳ scrollers',160,H-7); }
+  // Lightning warning
+  if(lightnings.some(l=>l.warn>0)){ X.fillStyle='#ffee00'; X.fillText('  ⚡ incoming!',260,H-7); }
+  X.textAlign='right';
+  const hint=pw?`[F] ${ORB_USE[pw.type]||'use item'}`:'arrows/wasd · space=jump · shift/z=grab';
+  X.fillStyle=T.dim; X.fillText(hint,W-14,H-7);
+  X.textAlign='left';
 }
 
 function drawEvtOverlay(){
@@ -630,6 +853,8 @@ function drawWinDead(){
 function drawGame(){
   X.fillStyle=T.bg;X.fillRect(0,0,W,H);
   for(const p of plats){const fn=PD[p.t];if(fn)fn(p);}
+  for(const s of scrollers){drawScroller(s);}
+  drawLightnings();
   drawOrbs();drawCrabs();drawBullets();drawHookLine();drawDuck();
   for(const e of enems){ const sy=e.py-camY-14; if(sy>-20&&sy<H+20){X.font='bold 12px monospace';X.fillStyle=T===THEMES.matrix?'#ff0000':'#f85149';X.textAlign='center';X.fillText('☠',e.x+5,sy+12);X.textAlign='left';} }
   drawRival();drawPlayer();
@@ -647,19 +872,20 @@ function menuChrome(title){
   X.fillStyle=T.bg;X.fillRect(0,0,W,H);
   if(vibeOn){X.strokeStyle=`hsl(${(gt*2)%360},100%,55%)`;X.lineWidth=3;X.strokeRect(2,2,W-4,H-4);}
   X.fillStyle=T.sb;X.fillRect(0,0,SB,H);X.fillStyle=T.brd;X.fillRect(SB-1,0,1,H);
-  X.fillStyle=T.tb;X.fillRect(0,0,W,TB);X.fillStyle=T.brd;X.fillRect(0,TB-1,W,1);
-  X.fillStyle='#da7756';X.beginPath();X.arc(20,22,10,0,Math.PI*2);X.fill();
-  X.fillStyle='#fff';X.font='bold 10px sans-serif';X.textAlign='center';X.fillText('C',20,26);X.textAlign='left';
-  X.fillStyle=T.txt;X.font='bold 13px monospace';X.fillText(title,SB+16,27);
+  X.fillStyle=T.sb;X.fillRect(0,0,W,TB);X.fillStyle=T.brd;X.fillRect(0,TB-1,W,1);
+  X.fillStyle='#da7756';X.beginPath();X.arc(20,TB/2,10,0,Math.PI*2);X.fill();
+  X.fillStyle='#fff';X.font='bold 10px sans-serif';X.textAlign='center';X.fillText('C',20,TB/2+4);X.textAlign='left';
+  X.fillStyle=T.acc;X.fillRect(40,0,2,TB); // active tab indicator
+  X.fillStyle=T.txt;X.font='bold 12px monospace';X.fillText(title,50,TB/2+5);
 }
 
 function drawMenu(){
   T=vibeOn?THEMES.vibe:THEMES.normal;
-  menuChrome('CLIMBER  —  claude-code');
+  menuChrome('mount-opus  —  claude-code');
   X.save();if(vibeOn){X.shadowColor=`hsl(${(gt*3)%360},100%,60%)`;X.shadowBlur=22;}
-  X.fillStyle=T.acc;X.font='bold 52px monospace';X.textAlign='center';X.fillText('CLIMBER',W/2+SB/4,TB+120);
+  X.fillStyle=T.acc;X.font='bold 52px monospace';X.textAlign='center';X.fillText('MOUNT OPUS',W/2+SB/4,TB+120);
   X.restore();
-  X.fillStyle=T.dim;X.font='13px monospace';X.textAlign='center';X.fillText('A free-solo platformer inside Claude Code',W/2+SB/4,TB+148);
+  X.fillStyle=T.dim;X.font='13px monospace';X.textAlign='center';X.fillText('a free-solo platformer  ·  claude code aesthetic',W/2+SB/4,TB+150);
   const mx=W/2+SB/4, my=TB+175;
   for(let i=0;i<MENU_ITEMS.length;i++){
     const sel=i===menuSel, y=my+i*44;

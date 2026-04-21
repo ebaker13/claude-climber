@@ -88,6 +88,9 @@ let rival=null; // rival stick figure
 const ORB_TYPES=['jetpack','gun','hook','rival'];
 const ORB_ICONS={ jetpack:'🚀', gun:'🔫', hook:'🪝', rival:'👤' };
 const ORB_COLS={ jetpack:'#ffaa00', gun:'#ff5555', hook:'#55aaff', rival:'#aa55ff' };
+const ORB_DESC={ jetpack:'Jetpack', gun:'Ray Gun', hook:'Grappling Hook', rival:'Rival Agent' };
+const ORB_USE={ jetpack:'Hold F to boost upward', gun:'Press F to fire', hook:'Press F to grapple (3 uses)', rival:'Watch your back!' };
+let pwMsg='';
 
 // ── Platforms, enemies, orbs ─────────────────────────────────
 let plats=[], enems=[], orbs=[];
@@ -198,7 +201,7 @@ function useItem(){
       hookLine={x1:P.x+PW/2,y1:P.y,x2:P.x+PW/2,y2:best.y+best.h,t:18};
       P.y=best.y+best.h; P.x=Math.max(best.x,Math.min(best.x+best.w-PW,P.x));
       P.gf='B'; P.gp=best; P.grb=1; P.vx=0; P.vy=0;
-      pw.uses--; if(pw.uses<=0)pw=null;
+      pw.uses--; if(pw.uses<=0){pw=null;pwMsg='';}
     }
   } else if(pw.type==='gun'){
     bullets.push({x:P.face>0?P.x+PW:P.x,y:P.y+PH/2-3,vx:P.face*10,alive:true});
@@ -221,7 +224,7 @@ function update(){
   const JP=kp.Space||kp.ArrowUp||kp.KeyW, JH=keys.Space||keys.ArrowUp||keys.KeyW;
   const GK=keys.ShiftLeft||keys.ShiftRight||keys.KeyZ;
   const GP=kp.ShiftLeft||kp.ShiftRight||kp.KeyZ;
-  const XP=kp.KeyX, XH=keys.KeyX;
+  const XP=kp.KeyF, XH=keys.KeyF;
   const wJP=kp.Space;
 
   // ── Events ──────────────────────────────────────────────────
@@ -260,20 +263,22 @@ function update(){
   }
   bullets=bullets.filter(b=>b.alive);
 
-  // Orb pickup
+  // Orb pickup — type revealed on collection
   for(const o of orbs){
     if(o.collected)continue;
     if(ovlp(P.x,P.y,PW,PH,o.x,o.y,20,20)){
       o.collected=true;
-      if(o.type==='jetpack') pw={type:'jetpack',timer:480};
-      else if(o.type==='gun') pw={type:'gun',timer:0}; // unlimited until X shots
-      else if(o.type==='hook') pw={type:'hook',uses:3};
-      else if(o.type==='rival'){ pw={type:'rival',timer:700}; spawnRival(); }
+      const t=ORB_TYPES[Math.floor(Math.random()*ORB_TYPES.length)];
+      if(t==='jetpack') pw={type:'jetpack',timer:480};
+      else if(t==='gun') pw={type:'gun',timer:0};
+      else if(t==='hook') pw={type:'hook',uses:3};
+      else if(t==='rival'){ pw={type:'rival',timer:700}; spawnRival(); }
+      pwMsg=t;
     }
   }
 
   // Powerup timers
-  if(pw&&pw.timer!==undefined){ pw.timer--; if(pw.timer<=0){pw=null;if(rival){rival=null;}} }
+  if(pw&&pw.timer!==undefined){ pw.timer--; if(pw.timer<=0){pw=null;pwMsg='';if(rival){rival=null;}} }
 
   // Jetpack
   if(pw&&pw.type==='jetpack'){ cGrav=GRAV*0.12; if(XH)fireJetpack(); }
@@ -335,7 +340,7 @@ function update(){
     const eff_grav=pw&&pw.type==='jetpack'?cGrav*0.12:cGrav;
     P.vy+=eff_grav; if(P.vy>MFALL)P.vy=MFALL;
     if(D&&P.vy<0)P.vy+=eff_grav*2.5;
-    if(pw&&pw.type==='jetpack'&&(JH))P.vy=Math.max(P.vy-1.1,-8);
+    if(pw&&pw.type==='jetpack'&&XH)P.vy=Math.max(P.vy-1.1,-8);
     if(JP&&(P.gnd||P.coy>0)){P.vy=jv;P.coy=0;P.dju=0;}
     else if(JP&&ch.dj&&!P.dju){P.vy=jv*0.82;P.dju=1;}
     else if(JP)P.jbuf=JBUF;
@@ -453,10 +458,11 @@ function drawOrbs(){
     if(o.collected)continue;
     const sy=o.y-camY; if(sy<-25||sy>H+25)continue;
     const pulse=Math.sin(gt*0.07)*3;
-    X.save(); X.shadowBlur=12+pulse; X.shadowColor=ORB_COLS[o.type]||'#ffaa00';
-    X.fillStyle=ORB_COLS[o.type]+'55'; X.beginPath(); X.arc(o.x+10,sy+10,13+pulse,0,Math.PI*2); X.fill();
+    X.save(); X.shadowBlur=14+pulse; X.shadowColor='#00ccff';
+    X.fillStyle='#00ccff22'; X.beginPath(); X.arc(o.x+10,sy+10,13+pulse,0,Math.PI*2); X.fill();
+    X.fillStyle='#00ccff88'; X.beginPath(); X.arc(o.x+10,sy+10,7,0,Math.PI*2); X.fill();
     X.shadowBlur=0; X.restore();
-    X.font='13px serif'; X.textAlign='center'; X.fillText(ORB_ICONS[o.type],o.x+10,sy+15); X.textAlign='left';
+    X.font='bold 13px monospace'; X.fillStyle='#00eeff'; X.textAlign='center'; X.fillText('?',o.x+10,sy+15); X.textAlign='left';
   }
 }
 
@@ -542,6 +548,22 @@ function drawChrome(){
   X.fillStyle='#fff';X.font='bold 10px sans-serif';X.textAlign='center';X.fillText('C',20,26);X.textAlign='left';
   X.fillStyle=T.dim;X.font='10px sans-serif';X.fillText('EXPLORER',40,28);
   [['src',0],['components',1],['DataTable.tsx',2],['hooks',1],['useSort.ts',2],['utils',1],['index.ts',2],['package.json',0]].forEach(([n,d],i)=>{ X.fillStyle=T.dim;X.font='11px sans-serif';X.fillText(n,10+d*16,52+i*18); });
+  // Active item panel
+  if(pw&&pwMsg){
+    const ix=8,iy=210,iw=SB-16;
+    X.fillStyle=sc('#161b22'); X.fillRect(ix,iy,iw,78);
+    const col=ORB_COLS[pw.type]||'#00ccff';
+    X.strokeStyle=col; X.lineWidth=1; X.strokeRect(ix+0.5,iy+0.5,iw-1,77);
+    X.save(); X.shadowBlur=8; X.shadowColor=col;
+    X.font='bold 10px monospace'; X.fillStyle=col; X.fillText('✦ ITEM ACQUIRED',ix+6,iy+14);
+    X.restore();
+    X.font='bold 11px monospace'; X.fillStyle=T.txt; X.fillText(ORB_ICONS[pw.type]+' '+ORB_DESC[pw.type],ix+6,iy+30);
+    X.font='10px monospace'; X.fillStyle=T.dim;
+    const useLines=(ORB_USE[pw.type]||'').match(/.{1,26}/g)||[];
+    useLines.forEach((ln,i)=>X.fillText(ln,ix+6,iy+46+i*14));
+    if(pw.uses!==undefined){ X.fillStyle=col; X.fillText('Uses left: '+pw.uses,ix+6,iy+66); }
+    else if(pw.timer>0){ X.fillStyle=col; X.fillText('Time: '+Math.ceil(pw.timer/60)+'s',ix+6,iy+66); }
+  }
   X.fillStyle=T.sb;X.fillRect(0,H-22,W,22);X.fillStyle=T.brd;X.fillRect(0,H-23,W,1);
   X.fillStyle=T.dim;X.font='10px monospace';X.fillText('⎇  main  ✓  Ready',8,H-8);
   X.textAlign='right';X.fillText('LVL '+lvl,W-8,H-8);X.textAlign='left';
@@ -560,7 +582,7 @@ function drawChrome(){
   X.fillStyle=T.acc;X.fillRect(SB+10,TB+6,(W-SB-20)*prog,3);
   // Controls hint + powerup hint
   X.fillStyle='rgba(110,118,129,0.45)';X.font='9px monospace';
-  const hint=pw?`[X] use ${pw.type}${pw.uses?' ('+pw.uses+')':pw.timer?' ('+Math.ceil(pw.timer/60)+'s)':''}`:'';
+  const hint=pw?`[F] ${ORB_USE[pw.type]||'use item'}`:'';
   X.fillText('ARROWS/WASD move  SPACE/W jump  SHIFT/Z grab  '+hint,SB+12,H-8);
 }
 
